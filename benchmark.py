@@ -1,9 +1,11 @@
 """Benchmarks for naive vs efficient BPE training and for encoding.
 
-    python benchmark.py --quick     # small sizes, runs in about a minute
-    python benchmark.py             # full run (naive is slow on large inputs)
+    python benchmark.py --corpus jeopardy --quick
+    python benchmark.py --corpus jeopardy              # full run (naive is slow)
+    python benchmark.py --corpus files --files a.txt b.txt [--strip-boilerplate]
+    python benchmark.py                                # Gutenberg download (default)
 
-Writes results.csv and three plots next to this file.
+Writes results_<corpus>.csv and three plots next to this file.
 """
 
 import argparse
@@ -17,7 +19,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from bpe import encode, encode_naive, to_sequence, train_efficient, train_naive
-from corpus import load_corpus
+from corpus import load_corpus, load_files, load_jeopardy
 
 OUT = Path(__file__).parent
 TRAIN_BOOKS = [1342, 2701, 84]   # Pride and Prejudice, Moby Dick, Frankenstein
@@ -54,10 +56,23 @@ def plot(xs, series, xlabel, title, fname):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--quick", action="store_true")
+    ap.add_argument("--corpus", choices=["gutenberg", "jeopardy", "files"], default="gutenberg")
+    ap.add_argument("--jeopardy-path", default="jeopardy/jeopardy.json")
+    ap.add_argument("--files", nargs="+", help="plain-text files for --corpus files")
+    ap.add_argument("--strip-boilerplate", action="store_true",
+                    help="remove Gutenberg header/footer from --files")
     args = ap.parse_args()
 
-    train_text = load_corpus(TRAIN_BOOKS)
-    test_text = load_corpus(TEST_BOOKS)
+    tag = args.corpus
+    if args.corpus == "jeopardy":
+        train_text, test_text = load_jeopardy(args.jeopardy_path)
+    elif args.corpus == "files":
+        text = load_files(args.files, strip_boilerplate=args.strip_boilerplate)
+        cut = int(len(text) * 0.7)
+        train_text, test_text = text[:cut], text[cut:]
+    else:
+        train_text = load_corpus(TRAIN_BOOKS)
+        test_text = load_corpus(TEST_BOOKS)
     print(f"train corpus: {len(train_text):,} chars, test corpus: {len(test_text):,} chars")
 
     if args.quick:
@@ -82,7 +97,7 @@ def main():
         rows.append(["vary_N", n, len(seq), fixed_m, a, b])
         print(f"N={n:>8,} M={fixed_m}: naive {a:7.2f}s  efficient {b:6.2f}s")
     plot(sizes, {"naive": t_naive, "efficient": t_eff}, "corpus size (chars)",
-         f"Training time vs corpus size (M={fixed_m})", "plot_vary_N.png")
+         f"Training time vs corpus size (M={fixed_m})", f"plot_vary_N_{tag}.png")
     print(f"slope vs N: naive {slope(sizes, t_naive):.2f}, efficient {slope(sizes, t_eff):.2f}")
 
     # Experiment 2: vary number of merges M, fixed N
@@ -96,7 +111,7 @@ def main():
         rows.append(["vary_M", fixed_n, len(seq), m, a, b])
         print(f"N={fixed_n:>8,} M={m:>4}: naive {a:7.2f}s  efficient {b:6.2f}s")
     plot(merge_counts, {"naive": t_naive, "efficient": t_eff}, "number of merges M",
-         f"Training time vs merges (N={fixed_n:,})", "plot_vary_M.png")
+         f"Training time vs merges (N={fixed_n:,})", f"plot_vary_M_{tag}.png")
     print(f"slope vs M: naive {slope(merge_counts, t_naive):.2f}, efficient {slope(merge_counts, t_eff):.2f}")
 
     # Experiment 3: encoding unseen text with a learned merge table
@@ -112,13 +127,13 @@ def main():
         print(f"encode {n:>8,} chars, M={enc_m}: apply-all-merges {a:6.2f}s  rank-based {b:6.2f}s"
               f"  ({n / len(ids2):.2f} chars/token)")
     plot(enc_sizes, {"apply all merges": t_enc_naive, "rank-based": t_enc},
-         "text length (chars)", f"Encoding time (M={enc_m})", "plot_encode.png")
+         "text length (chars)", f"Encoding time (M={enc_m})", f"plot_encode_{tag}.png")
 
-    with open(OUT / "results.csv", "w", newline="") as f:
+    with open(OUT / f"results_{tag}.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["experiment", "chars", "symbols_or_tokens", "merges", "naive_s", "efficient_s"])
         w.writerows(rows)
-    print("wrote results.csv and plots")
+    print(f"wrote results_{tag}.csv and plots for {tag}")
 
 
 if __name__ == "__main__":

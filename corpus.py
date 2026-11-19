@@ -74,7 +74,8 @@ def load_files(paths, strip_boilerplate=False):
     return "\n".join(texts)
 
 
-TAG = re.compile(r"<[^>]+>")
+BR = re.compile(r"<br\s*/?>", re.I)   # line breaks become spaces, or words fuse
+TAG = re.compile(r"<[^>]+>")           # every other tag is simply removed
 
 
 def load_jeopardy(path, seed=0, test_fraction=0.1):
@@ -89,7 +90,7 @@ def load_jeopardy(path, seed=0, test_fraction=0.1):
         rows = json.load(f)
     questions = []
     for r in rows:
-        q = TAG.sub("", html.unescape(r["question"])).replace("\\'", "'").strip()
+        q = TAG.sub("", BR.sub(" ", html.unescape(r["question"]))).replace("\\'", "'").strip()
         if len(q) >= 2 and q[0] == q[-1] == "'":
             q = q[1:-1]
         questions.append(" ".join(q.split()))
